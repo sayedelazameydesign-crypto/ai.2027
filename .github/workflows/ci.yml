@@ -18,11 +18,11 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python when project metadata exists
+        if: hashFiles('pyproject.toml') != ''
         uses: actions/setup-python@v5
         with:
           python-version: "3.x"
-          cache: pip
 
       - name: Set up Node.js when package metadata exists
         if: hashFiles('package.json') != ''
