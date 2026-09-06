@@ -1,7 +1,6 @@
 // src/core/types.ts
-// ai.2027 — core domain contract (vendor-neutral)
-// No dependency on any specific LLM/runtime provider.
-// Scope: Task -> Plan -> Execution -> Verification -> Result + Evidence.
+// ai.2027 — core domain contract (vendor-neutral), v1.
+// No dependency on any specific LLM/runtime provider (Arena, Claude, Codex, etc).
 // Agent and Tool are built on top of this contract in a later pass.
 
 export type TaskId = string;
@@ -26,7 +25,15 @@ export interface Task {
   createdAt: string; // ISO 8601
   status: TaskStatus;
   requiresApproval: boolean;
-  rejectionReason?: string; // required by the application when status is rejected
+  rejectionReason?: string;
+  /** Present when this task was created to re-open a rejected/failed task,
+   *  instead of mutating the original task's status backward. */
+  parentTaskId?: TaskId;
+  /** Optimistic-concurrency counter, incremented by transition() on every
+   *  successful transition. The real atomic check belongs at the storage
+   *  layer (e.g. `WHERE id = ? AND version = ?`); this field only lets the
+   *  in-memory helper detect a stale read before hitting storage. */
+  version: number;
 }
 
 // ---------- Plan ----------

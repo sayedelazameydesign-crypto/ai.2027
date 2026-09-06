@@ -7,18 +7,21 @@ import { Task, TaskStatus } from "../../src/core/types";
 import {
   ALLOWED_TRANSITIONS,
   InvalidTransitionError,
+  VersionConflictError,
   canTransition,
   isTerminal,
   transition,
 } from "../../src/core/lifecycle";
 
-function makeTask(status: TaskStatus): Task {
+function makeTask(status: TaskStatus, overrides: Partial<Task> = {}): Task {
   return {
     id: "task-1",
     goal: "test goal",
     createdAt: new Date().toISOString(),
     status,
     requiresApproval: false,
+    version: 0,
+    ...overrides,
   };
 }
 
@@ -44,7 +47,14 @@ describe("lifecycle: valid transitions", () => {
     const task = makeTask("created");
     const next = transition(task, "planning");
     expect(task.status).toBe("created");
+    expect(task.version).toBe(0);
     expect(next).not.toBe(task);
+  });
+
+  it("increments version on every successful transition", () => {
+    const task = makeTask("created", { version: 5 });
+    const next = transition(task, "planning");
+    expect(next.version).toBe(6);
   });
 });
 
@@ -97,5 +107,49 @@ describe("canTransition", () => {
         );
       }
     }
+  });
+});
+
+describe("optimistic concurrency", () => {
+  it("succeeds when expectedVersion matches", () => {
+    const task = makeTask("created", { version: 3 });
+    const next = transition(task, "planning", { expectedVersion: 3 });
+    expect(next.version).toBe(4);
+  });
+
+  it("throws VersionConflictError when expectedVersion does not match", () => {
+    const task = makeTask("created", { version: 3 });
+    expect(() =>
+      transition(task, "planning", { expectedVersion: 2 })
+    ).toThrow(VersionConflictError);
+  });
+
+  it("VersionConflictError carries taskId/expectedVersion/actualVersion", () => {
+    const task = makeTask("created", { version: 3 });
+    try {
+      transition(task, "planning", { expectedVersion: 2 });
+      throw new Error("expected transition to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(VersionConflictError);
+      const e = err as VersionConflictError;
+      expect(e.taskId).toBe(task.id);
+      expect(e.expectedVersion).toBe(2);
+      expect(e.actualVersion).toBe(3);
+    }
+  });
+
+  it("surfaces the version conflict before checking transition validity", () => {
+    // Task is terminal (so the transition itself would also be invalid),
+    // but a stale caller should learn about the conflict first.
+    const task = makeTask("completed", { version: 3 });
+    expect(() =>
+      transition(task, "planning", { expectedVersion: 2 })
+    ).toThrow(VersionConflictError);
+  });
+
+  it("expectedVersion is optional — plain in-memory usage still works", () => {
+    const task = makeTask("created", { version: 0 });
+    const next = transition(task, "planning");
+    expect(next.status).toBe("planning");
   });
 });
