@@ -6,7 +6,7 @@ import {
   ToolInputValidationError,
   validateToolInput,
 } from "../../src/core/tool";
-import { invokeTool } from "../../src/core/orchestrator";
+import { invokeTool } from "../../src/core/orchestrator.internal";
 
 const echoTool: Tool<{ message: string }, { echoed: string }> = {
   name: "echo",

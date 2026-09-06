@@ -1,16 +1,12 @@
-import { Decision, isDecisionForTask } from "./decision";
+import {
+  Decision,
+  DecisionValidationError,
+  isDecisionForTask,
+  validateDecision,
+} from "./decision";
+import { invokeTool } from "./orchestrator.internal";
 import { Execution, ExecutionId, Result, Task, TaskId } from "./types";
-import { Tool, ToolExecutionContext, validateToolInput } from "./tool";
-
-export interface InvokeToolOptions<TInput> {
-  readonly taskId: TaskId;
-  readonly planStepId: string;
-  readonly executionId: ExecutionId;
-  readonly tool: Tool<TInput, unknown>;
-  readonly input: unknown;
-  readonly now: () => string;
-  readonly context?: ToolExecutionContext;
-}
+import { Tool, ToolExecutionContext } from "./tool";
 
 export interface ToolRegistry {
   get(name: string): Tool<unknown, unknown> | undefined;
@@ -33,7 +29,8 @@ export interface HandleDecisionOptions {
 
 export type OrchestratorOutcome =
   | { readonly kind: "execution"; readonly execution: Execution }
-  | { readonly kind: "result"; readonly result: Result };
+  | { readonly kind: "result"; readonly result: Result }
+  | { readonly kind: "rejected"; readonly error: DecisionValidationError };
 
 export class DecisionTaskMismatchError extends Error {
   readonly taskId: TaskId;
@@ -51,17 +48,28 @@ export class DecisionTaskMismatchError extends Error {
 }
 
 /**
- * The Decision receiver and execution boundary. It resolves Tools, delegates
- * raw invocation to invokeTool(), and never asks an Agent to execute anything.
+ * The sole public Decision receiver and execution boundary. It validates the
+ * untrusted input before interpreting it, resolves Tools, and delegates raw
+ * invocation to an internal helper that is not part of this public contract.
  */
 export class Orchestrator {
   constructor(private readonly tools: ToolRegistry) {}
 
   async handleDecision(
     task: Readonly<Task>,
-    decision: Decision,
+    input: unknown,
     options: HandleDecisionOptions,
   ): Promise<OrchestratorOutcome> {
+    let decision: Decision;
+    try {
+      decision = validateDecision(input);
+    } catch (error) {
+      if (error instanceof DecisionValidationError) {
+        return { kind: "rejected", error };
+      }
+      throw error;
+    }
+
     if (decision.kind === "final") {
       if (!isDecisionForTask(decision, task.id)) {
         throw new DecisionTaskMismatchError(task.id, decision.result.taskId);
@@ -97,42 +105,5 @@ export class Orchestrator {
       context: options.context,
     });
     return { kind: "execution", execution };
-  }
-}
-
-/**
- * Owns execution bookkeeping while keeping Task/Execution out of Tool.
- * The adapter returns one terminal Execution record for this invocation.
- */
-export async function invokeTool<TInput>(
-  options: InvokeToolOptions<TInput>,
-): Promise<Execution> {
-  const startedAt = options.now();
-  const base = {
-    id: options.executionId,
-    taskId: options.taskId,
-    planStepId: options.planStepId,
-    toolName: options.tool.name,
-    input: options.input,
-    startedAt,
-  };
-
-  try {
-    const validatedInput = validateToolInput(options.tool, options.input);
-    const output = await options.tool.execute(validatedInput, options.context);
-    return {
-      ...base,
-      input: validatedInput,
-      output,
-      status: "succeeded",
-      finishedAt: options.now(),
-    };
-  } catch (error) {
-    return {
-      ...base,
-      status: "failed",
-      finishedAt: options.now(),
-      error: error instanceof Error ? error.message : String(error),
-    };
   }
 }

@@ -34,6 +34,22 @@ const now = vi
   .mockReturnValueOnce("2026-09-06T08:00:01.000Z");
 
 describe("Orchestrator.handleDecision", () => {
+  it("rejects an invalid runtime Decision without invoking a Tool", async () => {
+    const execute = vi.fn();
+    const invalidRegistry = {
+      get: () => ({ ...echoTool, execute }),
+    };
+    const orchestrator = new Orchestrator(invalidRegistry);
+    const result = await orchestrator.handleDecision(
+      task,
+      { kind: "tool_request", toolName: "echo" },
+      { planStepId: "step-1", executionId: "execution-0", now },
+    );
+
+    expect(result.kind).toBe("rejected");
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it("returns a final Result without creating an Execution", async () => {
     const orchestrator = new Orchestrator(registry);
     const result = await orchestrator.handleDecision(
@@ -80,6 +96,44 @@ describe("Orchestrator.handleDecision", () => {
     if (result.kind !== "execution") throw new Error("expected execution");
     expect(result.execution.status).toBe("succeeded");
     expect(result.execution.output).toEqual({ echoed: "hello" });
+  });
+
+  it("performs registry lookup before input validation and execution", async () => {
+    const order: string[] = [];
+    const orderedTool: Tool<{ message: string }, { echoed: string }> = {
+      ...echoTool,
+      inputSchema: z.object({
+        message: z.string().transform((value) => {
+          order.push("validation");
+          return value;
+        }),
+      }),
+      execute: (input) => {
+        order.push("execute");
+        return { echoed: input.message };
+      },
+    };
+    const orderedRegistry = {
+      get: (name: string) => {
+        order.push("lookup");
+        return name === "echo" ? orderedTool : undefined;
+      },
+    };
+
+    await new Orchestrator(orderedRegistry).handleDecision(
+      task,
+      { kind: "tool_request", toolName: "echo", input: { message: "hello" } },
+      {
+        planStepId: "step-1",
+        executionId: "execution-order",
+        now: vi
+          .fn()
+          .mockReturnValueOnce("2026-09-06T08:00:00.000Z")
+          .mockReturnValueOnce("2026-09-06T08:00:01.000Z"),
+      },
+    );
+
+    expect(order).toEqual(["lookup", "validation", "execute"]);
   });
 
   it("turns an unknown Tool into a failed Execution", async () => {

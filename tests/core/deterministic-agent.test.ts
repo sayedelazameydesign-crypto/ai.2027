@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { AgentContext } from "../../src/core/agent";
 import { DeterministicAgent } from "../../src/core/deterministic-agent";
-import { invokeTool } from "../../src/core/orchestrator";
+import { invokeTool } from "../../src/core/orchestrator.internal";
 import { Tool } from "../../src/core/tool";
 import { Task } from "../../src/core/types";
 
