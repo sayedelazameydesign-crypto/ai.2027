@@ -18,6 +18,27 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+          cache: pip
+
+      - name: Set up Node.js when package metadata exists
+        if: hashFiles('package.json') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install Node dependencies
+        if: hashFiles('package-lock.json') != ''
+        run: npm ci
+
+      - name: Install Python tooling when project metadata exists
+        if: hashFiles('pyproject.toml') != ''
+        run: python -m pip install ruff mypy pytest
+
       - name: Validate repository structure
         shell: bash
         run: |
@@ -31,19 +52,39 @@ jobs:
           test -d tests
           test -d config
           test -d prompts
-          echo "Repository structure is valid."
 
-      - name: Run project checks when available
+      - name: Lint
         shell: bash
         run: |
           set -euo pipefail
           if [[ -f package.json ]]; then
-            npm ci
-            npm test --if-present
             npm run lint --if-present
           elif [[ -f pyproject.toml ]]; then
-            python -m compileall -q src tests
-            if command -v pytest >/dev/null 2>&1; then pytest -q; fi
+            python -m ruff check src tests
           else
-            echo "No language runtime configured yet; bootstrap checks passed."
+            echo "No linter configured yet."
+          fi
+
+      - name: Type-check
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f package.json ]]; then
+            npm run type-check --if-present
+          elif [[ -f pyproject.toml ]]; then
+            python -m mypy src
+          else
+            echo "No type checker configured yet."
+          fi
+
+      - name: Unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f package.json ]]; then
+            npm test --if-present
+          elif [[ -f pyproject.toml ]]; then
+            python -m pytest -q
+          else
+            echo "No unit test runner configured yet."
           fi

@@ -24,13 +24,16 @@ Create a local environment from the example file when needed:
 
 ```bash
 cp .env.example .env
+make setup
 ```
+
+`make setup` configures the repository's local hooks. Pushes to `main` run the same structural and available runtime checks used by CI before they leave the local machine. The hook is a local safeguard, not a replacement for server-side branch protection.
 
 Run the project checks with the commands documented by the implementation as it is added. Pull requests are validated by GitHub Actions.
 
 ## Branching
 
-- `main` is the protected release branch.
+- `main` is the protected release branch by convention.
 - `dev` is the default integration branch for daily work.
 - Use `feature/*`, `fix/*`, or `chore/*` for short-lived branches.
 
