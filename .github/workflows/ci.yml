@@ -26,7 +26,7 @@ jobs:
 
       - name: Set up Node.js when package metadata exists
         if: hashFiles('package.json') != ''
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: npm
